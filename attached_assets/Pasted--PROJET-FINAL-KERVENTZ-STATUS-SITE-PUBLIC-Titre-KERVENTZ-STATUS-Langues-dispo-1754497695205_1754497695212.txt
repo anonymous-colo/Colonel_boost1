@@ -1,0 +1,67 @@
+✅ PROJET FINAL — KERVENTZ STATUS 🚀🔥
+
+🔵 SITE PUBLIC
+- Titre : KERVENTZ STATUS 🚀🔥
+- Langues disponibles : Français 🇫🇷, Anglais 🇬🇧, Espagnol 🇪🇸
+- Formulaire d’inscription :
+  • Champs : Nom, Numéro, Email
+  • Clavier adapté automatiquement selon le champ :
+    - Nom → clavier texte
+    - Numéro → clavier numérique
+    - Email → clavier e-mail
+  • Sélection d’indicatif : TOUS les pays du monde inclus 🌍
+    - 🇭🇹 Haïti sélectionné par défaut
+  • Vérification avancée :
+    - Aucun numéro en double autorisé ❌📞
+    - Validation du format email / numéro
+  • Le nom est automatiquement suffixé : K.B.S🚀🔥
+
+✅ Après inscription :
+- Message de confirmation :
+  ➤ MERCI [Nom] vous avez été enregistrée avec succès. Maintenant je vous prie de bien vouloir entrer dans le groupe WhatsApp là où tu trouveras le folder VCF qui aura tous les contacts enregistrés pour que tu puisses le télécharger. Merci !
+- Bouton vert stylé avec logo WhatsApp :
+  ➤ Texte : “Rejoindre le groupe WhatsApp”
+  ➤ Lien : https://chat.whatsapp.com/CsVWRycnwNHFhqVLEtFyZv?mode=ac_t
+
+🎨 Design :
+- Responsive (mobile/tablette/PC)
+- 10 témoignages (nom + photo + texte unique)
+- Section Contactez-nous :
+  • WhatsApp : +18495849472
+  • Email : contact.kerventzweb@gmail.com
+- Section FAQ
+- Footer professionnel
+- Bouton rond pour mode clair / sombre
+
+🟠 DASHBOARD ADMIN
+- Accès sécurisé :
+  • Nom d’utilisateur : admin
+  • Mot de passe : kerventz2025
+  • Expiration automatique des sessions : 24h
+  • Possibilité de mémoriser les identifiants
+
+👨‍💼 Interface admin :
+- Recherche par nom ou numéro
+- Modification / suppression individuelle
+- Suppression totale des contacts
+- Export CSV & VCF :
+  • VCF bien encodé : UTF-8 + CHARSET=UTF-8
+  • Emojis et caractères spéciaux préservés
+- Statistiques visibles :
+  • Nombre total de contacts
+  • Nombre de contacts du jour
+  • Nombre avec e-mail
+  • Liste des 5 derniers inscrits
+  • Graphique des inscriptions (jour/semaine)
+- Filtres :
+  • Par date
+  • Par présence d’email
+- Bouton de test pour envoi d’e-mail
+- Mode clair/sombre automatique
+- Avatar + nom admin en haut à droite
+
+💾 INFOS TECHNIQUES
+- Base de données : SQLite
+- Email officiel configuré : contact.kerventzweb@gmail.com (SMTP intégré)
+- Projet prêt à être déployé sur Vercel 🚀
+- Aucun suffixe modifiable : le suffixe est fixé à “K.B.S🚀🔥”
