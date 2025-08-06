@@ -11,12 +11,10 @@ export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
-  headers?: Record<string, string> | undefined,
 ): Promise<Response> {
-  const defaultHeaders: Record<string, string> = data ? { "Content-Type": "application/json" } : {};
   const res = await fetch(url, {
     method,
-    headers: { ...defaultHeaders, ...headers },
+    headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
