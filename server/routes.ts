@@ -1,282 +1,301 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertContactSchema, insertAdminSessionSchema } from "@shared/schema";
-import { emailService } from "./services/emailService";
-import { vcfService } from "./services/vcfService";
+import { insertContactSchema, loginSchema } from "@shared/schema";
 import { z } from "zod";
+import bcrypt from "bcrypt";
+import session from "express-session";
 
-const ADMIN_PASSWORD = "kerventz2000";
-const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+declare module 'express-session' {
+  interface SessionData {
+    adminId?: string;
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  
+  // Session configuration
+  app.use(session({
+    secret: process.env.SESSION_SECRET || 'kerventz-status-secret-2025',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    }
+  }));
+
+  // Initialize admin account if it doesn't exist
+  const initializeAdmin = async () => {
+    const existingAdmin = await storage.getAdminByUsername('admin');
+    if (!existingAdmin) {
+      const hashedPassword = await bcrypt.hash('kerventz2025', 10);
+      await storage.createAdmin({
+        username: 'admin',
+        password: hashedPassword,
+      });
+    }
+  };
+  await initializeAdmin();
+
+  // Authentication middleware
+  const requireAuth = async (req: any, res: any, next: any) => {
+    if (!req.session.adminId) {
+      return res.status(401).json({ message: "Non autorisé" });
+    }
+    
+    const admin = await storage.getAdmin(req.session.adminId);
+    if (!admin) {
+      return res.status(401).json({ message: "Session invalide" });
+    }
+    
+    req.admin = admin;
+    next();
+  };
+
+  // Public endpoint to get latest contacts (for homepage display)
+  app.get("/api/contacts/latest", async (req, res) => {
+    try {
+      const latestContacts = await storage.getLatestContacts();
+      res.json(latestContacts);
+    } catch (error) {
+      console.error("Error fetching latest contacts:", error);
+      res.status(500).json({ error: "Erreur serveur" });
+    }
+  });
+
   // Contact registration
   app.post("/api/contacts", async (req, res) => {
     try {
       const validatedData = insertContactSchema.parse(req.body);
       
-      // Check for duplicate WhatsApp number
-      const existingContact = await storage.getContactByWhatsApp(validatedData.whatsappNumber);
+      // Check for duplicate phone number
+      const existingContact = await storage.getContactByPhone(validatedData.phone);
       if (existingContact) {
-        return res.status(409).json({ 
-          message: `Le numéro ${validatedData.countryCode}${validatedData.whatsappNumber} est déjà inscrit` 
+        return res.status(400).json({ 
+          message: "Ce numéro est déjà enregistré dans notre système" 
         });
       }
-      
-      // Create contact
+
       const contact = await storage.createContact(validatedData);
-      
-      // Send confirmation email if email provided
-      if (validatedData.email) {
-        const emailSent = await emailService.sendConfirmationEmail(
-          validatedData.email, 
-          validatedData.fullName
-        );
-        if (!emailSent) {
-          console.error('Failed to send confirmation email');
-        }
-      }
-      
       res.status(201).json({ 
-        message: "Inscription réussie!",
-        contact: {
-          id: contact.id,
-          fullName: contact.fullName,
-          createdAt: contact.createdAt
-        }
+        message: "Inscription réussie",
+        contact: contact
       });
     } catch (error) {
-      console.error('Registration error:', error);
-      res.status(400).json({ message: "Erreur lors de l'inscription" });
-    }
-  });
-
-  // Get recent contacts (public)
-  app.get("/api/contacts/recent", async (req, res) => {
-    try {
-      const contacts = await storage.getRecentContacts(5);
-      res.json(contacts.map(contact => ({
-        id: contact.id,
-        fullName: contact.fullName,
-        createdAt: contact.createdAt
-      })));
-    } catch (error) {
-      console.error('Error fetching recent contacts:', error);
-      res.status(500).json({ message: "Erreur serveur" });
-    }
-  });
-
-  // Get contacts count (public)
-  app.get("/api/contacts/count", async (req, res) => {
-    try {
-      const count = await storage.getContactsCount();
-      res.json({ count });
-    } catch (error) {
-      console.error('Error fetching contacts count:', error);
-      res.status(500).json({ message: "Erreur serveur" });
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Données invalides", 
+          errors: error.errors 
+        });
+      }
+      console.error("Erreur lors de l'inscription:", error);
+      res.status(500).json({ message: "Erreur interne du serveur" });
     }
   });
 
   // Admin login
   app.post("/api/admin/login", async (req, res) => {
     try {
-      const { password } = req.body;
+      const { username, password, rememberMe } = loginSchema.parse(req.body);
       
-      if (password !== ADMIN_PASSWORD) {
-        return res.status(401).json({ message: "Mot de passe incorrect" });
+      const admin = await storage.getAdminByUsername(username);
+      if (!admin) {
+        return res.status(401).json({ message: "Identifiants invalides" });
       }
+
+      const isValidPassword = await bcrypt.compare(password, admin.password);
+      if (!isValidPassword) {
+        return res.status(401).json({ message: "Identifiants invalides" });
+      }
+
+      // Update last login
+      await storage.updateAdminLastLogin(admin.id);
       
-      const expiresAt = new Date(Date.now() + SESSION_DURATION);
-      const session = await storage.createAdminSession({
-        isActive: true,
-        expiresAt
-      });
-      
+      // Set session
+      req.session.adminId = admin.id;
+      if (rememberMe) {
+        req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
+      }
+
       res.json({ 
         message: "Connexion réussie",
-        sessionId: session.id,
-        expiresAt: session.expiresAt
+        admin: { id: admin.id, username: admin.username }
       });
     } catch (error) {
-      console.error('Admin login error:', error);
-      res.status(500).json({ message: "Erreur serveur" });
-    }
-  });
-
-  // Check admin session
-  app.get("/api/admin/session", async (req, res) => {
-    try {
-      const sessionId = req.headers.authorization?.replace('Bearer ', '');
-      if (!sessionId) {
-        return res.status(401).json({ message: "Session non trouvée" });
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Données invalides", 
+          errors: error.errors 
+        });
       }
-      
-      const session = await storage.getActiveAdminSession();
-      if (!session || session.id !== sessionId) {
-        return res.status(401).json({ message: "Session invalide" });
-      }
-      
-      if (new Date() > session.expiresAt) {
-        await storage.deactivateAdminSession(session.id);
-        return res.status(401).json({ message: "Session expirée" });
-      }
-      
-      res.json({ valid: true, expiresAt: session.expiresAt });
-    } catch (error) {
-      console.error('Session check error:', error);
-      res.status(500).json({ message: "Erreur serveur" });
+      console.error("Erreur lors de la connexion:", error);
+      res.status(500).json({ message: "Erreur interne du serveur" });
     }
   });
 
   // Admin logout
-  app.post("/api/admin/logout", async (req, res) => {
-    try {
-      const sessionId = req.headers.authorization?.replace('Bearer ', '');
-      if (sessionId) {
-        await storage.deactivateAdminSession(sessionId);
+  app.post("/api/admin/logout", requireAuth, (req: any, res) => {
+    req.session.destroy((err: any) => {
+      if (err) {
+        return res.status(500).json({ message: "Erreur lors de la déconnexion" });
       }
       res.json({ message: "Déconnexion réussie" });
-    } catch (error) {
-      console.error('Logout error:', error);
-      res.status(500).json({ message: "Erreur serveur" });
-    }
+    });
+  });
+
+  // Get admin profile
+  app.get("/api/admin/profile", requireAuth, (req: any, res) => {
+    res.json({
+      id: req.admin.id,
+      username: req.admin.username,
+      lastLogin: req.admin.lastLogin
+    });
   });
 
   // Get all contacts (admin only)
-  app.get("/api/admin/contacts", async (req, res) => {
+  app.get("/api/admin/contacts", requireAuth, async (req, res) => {
     try {
-      const sessionId = req.headers.authorization?.replace('Bearer ', '');
-      const session = await storage.getActiveAdminSession();
-      
-      if (!session || session.id !== sessionId || new Date() > session.expiresAt) {
-        return res.status(401).json({ message: "Non autorisé" });
-      }
-      
-      const { search } = req.query;
+      const { search, filter } = req.query;
       let contacts;
-      
-      if (search && typeof search === 'string') {
-        contacts = await storage.searchContacts(search);
+
+      if (search) {
+        contacts = await storage.searchContacts(search as string);
+      } else if (filter === 'with-email') {
+        contacts = await storage.getContactsWithEmail();
+      } else if (filter === 'today') {
+        contacts = await storage.getTodayContacts();
+      } else if (filter === 'week') {
+        contacts = await storage.getWeekContacts();
       } else {
         contacts = await storage.getAllContacts();
       }
-      
+
       res.json(contacts);
     } catch (error) {
-      console.error('Error fetching contacts:', error);
-      res.status(500).json({ message: "Erreur serveur" });
+      console.error("Erreur lors de la récupération des contacts:", error);
+      res.status(500).json({ message: "Erreur interne du serveur" });
     }
   });
 
-  // Update contact (admin only)
-  app.put("/api/admin/contacts/:id", async (req, res) => {
+  // Get contact statistics
+  app.get("/api/admin/stats", requireAuth, async (req, res) => {
     try {
-      const sessionId = req.headers.authorization?.replace('Bearer ', '');
-      const session = await storage.getActiveAdminSession();
-      
-      if (!session || session.id !== sessionId || new Date() > session.expiresAt) {
-        return res.status(401).json({ message: "Non autorisé" });
-      }
-      
-      const { id } = req.params;
-      const updateData = req.body;
-      
-      const updatedContact = await storage.updateContact(id, updateData);
-      if (!updatedContact) {
-        return res.status(404).json({ message: "Contact non trouvé" });
-      }
-      
-      res.json(updatedContact);
+      const totalContacts = await storage.getContactsCount();
+      const todayContacts = await storage.getTodayContacts();
+      const weekContacts = await storage.getWeekContacts();
+      const contactsWithEmail = await storage.getContactsWithEmail();
+      const latestContacts = await storage.getLatestContacts(5);
+
+      res.json({
+        totalContacts,
+        todayContacts: todayContacts.length,
+        weekContacts: weekContacts.length,
+        withEmail: contactsWithEmail.length,
+        latestContacts,
+      });
     } catch (error) {
-      console.error('Error updating contact:', error);
-      res.status(500).json({ message: "Erreur serveur" });
+      console.error("Erreur lors de la récupération des statistiques:", error);
+      res.status(500).json({ message: "Erreur interne du serveur" });
     }
   });
 
-  // Delete contact (admin only)
-  app.delete("/api/admin/contacts/:id", async (req, res) => {
+  // Update contact
+  app.put("/api/admin/contacts/:id", requireAuth, async (req, res) => {
     try {
-      const sessionId = req.headers.authorization?.replace('Bearer ', '');
-      const session = await storage.getActiveAdminSession();
-      
-      if (!session || session.id !== sessionId || new Date() > session.expiresAt) {
-        return res.status(401).json({ message: "Non autorisé" });
-      }
-      
       const { id } = req.params;
-      const deleted = await storage.deleteContact(id);
+      const validatedData = insertContactSchema.partial().parse(req.body);
       
-      if (!deleted) {
+      const contact = await storage.updateContact(id, validatedData);
+      if (!contact) {
         return res.status(404).json({ message: "Contact non trouvé" });
       }
+
+      res.json({ message: "Contact mis à jour", contact });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Données invalides", 
+          errors: error.errors 
+        });
+      }
+      console.error("Erreur lors de la mise à jour:", error);
+      res.status(500).json({ message: "Erreur interne du serveur" });
+    }
+  });
+
+  // Delete contact
+  app.delete("/api/admin/contacts/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteContact(id);
       
+      if (!success) {
+        return res.status(404).json({ message: "Contact non trouvé" });
+      }
+
       res.json({ message: "Contact supprimé" });
     } catch (error) {
-      console.error('Error deleting contact:', error);
-      res.status(500).json({ message: "Erreur serveur" });
+      console.error("Erreur lors de la suppression:", error);
+      res.status(500).json({ message: "Erreur interne du serveur" });
     }
   });
 
-  // Delete all contacts (admin only)
-  app.delete("/api/admin/contacts", async (req, res) => {
+  // Delete all contacts
+  app.delete("/api/admin/contacts", requireAuth, async (req, res) => {
     try {
-      const sessionId = req.headers.authorization?.replace('Bearer ', '');
-      const session = await storage.getActiveAdminSession();
-      
-      if (!session || session.id !== sessionId || new Date() > session.expiresAt) {
-        return res.status(401).json({ message: "Non autorisé" });
-      }
-      
-      const deletedCount = await storage.deleteAllContacts();
-      res.json({ message: `${deletedCount} contacts supprimés` });
+      await storage.deleteAllContacts();
+      res.json({ message: "Tous les contacts ont été supprimés" });
     } catch (error) {
-      console.error('Error deleting all contacts:', error);
-      res.status(500).json({ message: "Erreur serveur" });
+      console.error("Erreur lors de la suppression:", error);
+      res.status(500).json({ message: "Erreur interne du serveur" });
     }
   });
 
-  // Export VCF (admin only)
-  app.get("/api/admin/export/vcf", async (req, res) => {
+  // Export contacts as VCF
+  app.get("/api/admin/export/vcf", requireAuth, async (req, res) => {
     try {
-      const sessionId = req.headers.authorization?.replace('Bearer ', '');
-      const session = await storage.getActiveAdminSession();
-      
-      if (!session || session.id !== sessionId || new Date() > session.expiresAt) {
-        return res.status(401).json({ message: "Non autorisé" });
-      }
-      
       const contacts = await storage.getAllContacts();
-      const vcfContent = vcfService.generateVCF(contacts);
       
-      res.setHeader('Content-Type', 'text/vcard');
-      res.setHeader('Content-Disposition', 'attachment; filename="colonel-boost-contacts.vcf"');
+      let vcfContent = '';
+      contacts.forEach(contact => {
+        vcfContent += 'BEGIN:VCARD\n';
+        vcfContent += 'VERSION:3.0\n';
+        vcfContent += `FN:${contact.name}\n`;
+        vcfContent += `TEL:${contact.countryCode}${contact.phone}\n`;
+        if (contact.email) {
+          vcfContent += `EMAIL:${contact.email}\n`;
+        }
+        vcfContent += 'END:VCARD\n';
+      });
+
+      res.setHeader('Content-Type', 'text/vcard; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="kerventz-contacts.vcf"');
       res.send(vcfContent);
     } catch (error) {
-      console.error('Error exporting VCF:', error);
-      res.status(500).json({ message: "Erreur serveur" });
+      console.error("Erreur lors de l'export VCF:", error);
+      res.status(500).json({ message: "Erreur interne du serveur" });
     }
   });
 
-  // Export CSV (admin only)
-  app.get("/api/admin/export/csv", async (req, res) => {
+  // Export contacts as CSV
+  app.get("/api/admin/export/csv", requireAuth, async (req, res) => {
     try {
-      const sessionId = req.headers.authorization?.replace('Bearer ', '');
-      const session = await storage.getActiveAdminSession();
-      
-      if (!session || session.id !== sessionId || new Date() > session.expiresAt) {
-        return res.status(401).json({ message: "Non autorisé" });
-      }
-      
       const contacts = await storage.getAllContacts();
-      const csvContent = vcfService.generateCSV(contacts);
       
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename="colonel-boost-contacts.csv"');
-      res.send(csvContent);
+      let csvContent = 'Nom,Téléphone,Email,Date d\'inscription\n';
+      contacts.forEach(contact => {
+        const email = contact.email || '';
+        const date = contact.createdAt.toLocaleDateString('fr-FR');
+        csvContent += `"${contact.name}","${contact.countryCode}${contact.phone}","${email}","${date}"\n`;
+      });
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="kerventz-contacts.csv"');
+      res.send('\ufeff' + csvContent); // BOM for UTF-8
     } catch (error) {
-      console.error('Error exporting CSV:', error);
-      res.status(500).json({ message: "Erreur serveur" });
+      console.error("Erreur lors de l'export CSV:", error);
+      res.status(500).json({ message: "Erreur interne du serveur" });
     }
   });
 
