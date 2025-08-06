@@ -1,146 +1,81 @@
-# Replit Project Guide
+# Overview
 
-## Overview
+KERVENTZ STATUS is a professional contact collection and management platform designed for the Haitian business community and diaspora. The application serves as a networking hub where users can register their contact information and gain access to a comprehensive directory of professional contacts through a WhatsApp group integration. The platform features a public registration interface with multi-language support (French, English, Spanish) and a secure administrative dashboard for contact management and data export capabilities.
 
-This is a full-stack web application called "Colonel Boost" - a contact management system designed for WhatsApp marketing. The app allows users to register their contact information and provides an admin panel to manage contacts and export them to VCF/CSV formats for WhatsApp marketing campaigns.
-
-**Status**: ✅ COMPLETED - Application fully functional and deployed
-
-## Recent Changes (January 26, 2025)
-
-✓ Fixed NodeMailer API method (createTransporter → createTransport)
-✓ Resolved database storage null handling for row counts 
-✓ Updated API request function to support authorization headers
-✓ Fixed Tailwind CSS scrollbar styles causing build errors
-✓ Resolved country selector duplicate key warnings with unique IDs
-✓ Successfully deployed complete dual-site system with all features
-
-## User Preferences
+# User Preferences
 
 Preferred communication style: Simple, everyday language.
 
-## System Architecture
+# Recent Updates (January 2025)
 
-### Frontend Architecture
-- **Framework**: React 18 with TypeScript
-- **Routing**: Wouter for client-side routing
-- **UI Components**: Shadcn/ui component library with Radix UI primitives
-- **Styling**: Tailwind CSS with custom CSS variables for theming
-- **State Management**: TanStack Query (React Query) for server state
-- **Forms**: React Hook Form with Zod validation
-- **Build Tool**: Vite for development and production builds
+## Latest Enhancements (January 6, 2025)
+- ✅ Added phone number validation by country code with specific length requirements
+- ✅ Implemented getLatestContacts method to display 5 most recent registrations on PUBLIC SITE
+- ✅ Fixed admin authentication - password must be entered manually (no pre-fill)
+- ✅ All contacts now display properly in admin dashboard table  
+- ✅ Created floating admin access button for easy dashboard access
+- ✅ Added BrilliantFeatures component with AI, predictive analytics, unified communication
+- ✅ Added EnhancedFeatures component showcasing professional capabilities
+- ✅ Integrated PerformanceOptimizer for image preloading and font optimization
+- ✅ Created comprehensive DEPLOYMENT_GUIDE.md for multiple platforms
+- ✅ Updated project ZIP with all latest professional enhancements
+- ✅ Fixed all LSP diagnostics and code quality issues
 
-### Backend Architecture
-- **Runtime**: Node.js with TypeScript
-- **Framework**: Express.js for REST API
-- **Database**: PostgreSQL with Drizzle ORM
-- **Database Provider**: Neon serverless PostgreSQL
-- **Email Service**: Nodemailer for sending confirmation emails
-- **Session Management**: Simple admin session management with database storage
+## Critical Fixes Completed
+- ✅ Latest 5 members now appear on PUBLIC HOME PAGE (not just admin)
+- ✅ Admin password authentication requires manual entry (security fix)
+- ✅ All registered contacts appear in admin dashboard table
+- ✅ Added revolutionary AI-powered features and professional capabilities
 
-### Project Structure
-```
-├── client/           # Frontend React application
-├── server/           # Backend Express server
-├── shared/           # Shared types and schemas
-├── migrations/       # Database migration files
-└── dist/            # Production build output
-```
+# System Architecture
 
-## Key Components
+## Frontend Architecture
+- **Framework**: React with TypeScript, built using Vite for development and bundling
+- **Styling**: Tailwind CSS with shadcn/ui component library for consistent design
+- **Theme System**: Dark/light mode support with CSS custom properties
+- **Internationalization**: Multi-language support (French, English, Spanish) with translation system
+- **Routing**: Wouter for client-side routing with public and admin routes
+- **State Management**: TanStack Query for server state and React hooks for local state
+- **Form Handling**: React Hook Form with Zod validation for type-safe form management
 
-### Database Layer
-- **ORM**: Drizzle ORM with PostgreSQL dialect
-- **Connection**: Neon serverless with connection pooling
-- **Schema**: Defined in `shared/schema.ts` using Drizzle and Zod
-- **Tables**: 
-  - `contacts` - stores user registration data
-  - `admin_sessions` - manages admin authentication
+## Backend Architecture
+- **Runtime**: Node.js with Express.js framework
+- **Database ORM**: Drizzle ORM with PostgreSQL as the primary database
+- **Authentication**: Session-based authentication using express-session with bcrypt for password hashing
+- **API Design**: RESTful API endpoints with JSON responses
+- **File Structure**: Monorepo structure with shared schemas between client and server
+- **Development**: Hot module replacement with Vite middleware in development mode
 
-### API Layer
-- **REST Endpoints**:
-  - `POST /api/contacts` - Register new contact
-  - `GET /api/contacts/recent` - Get recent contacts
-  - `GET /api/contacts/count` - Get total contact count
-  - `POST /api/admin/login` - Admin authentication
-  - `GET /api/admin/contacts` - Get all contacts (admin)
-  - `DELETE /api/admin/contacts` - Delete contacts (admin)
-  - `GET /api/admin/export/vcf` - Export VCF file
-  - `GET /api/admin/export/csv` - Export CSV file
+## Database Design
+- **Contacts Table**: Stores user registration data with unique phone number constraints and automatic K.B.S suffix addition
+- **Admins Table**: Manages administrator accounts with hashed passwords
+- **Sessions Table**: Handles admin authentication sessions with expiration tracking
+- **Validation**: Comprehensive input validation with duplicate phone number prevention
+- **Data Export**: Support for CSV and VCF formats with proper UTF-8 encoding
 
-### Frontend Pages
-- **Home** (`/`) - Contact registration form with testimonials
-- **Admin Login** (`/admin/login`) - Simple password authentication
-- **Admin Dashboard** (`/admin`) - Contact management interface
+## Security Implementation
+- **Password Hashing**: bcrypt with salt rounds for secure password storage
+- **Session Management**: 24-hour session expiration with secure cookie configuration
+- **Input Validation**: Zod schemas for client and server-side validation
+- **CORS Protection**: Express session middleware with secure configuration
+- **SQL Injection Prevention**: Parameterized queries through Drizzle ORM
 
-### Services
-- **Email Service**: Sends confirmation emails using Gmail SMTP
-- **VCF Service**: Generates VCF and CSV files for contact export
-- **Storage Service**: Database abstraction layer for contact operations
-
-## Data Flow
-
-1. **User Registration**:
-   - User fills contact form on home page
-   - Frontend validates data using Zod schema
-   - API checks for duplicate WhatsApp numbers
-   - Contact saved to database
-   - Confirmation email sent if email provided
-
-2. **Admin Management**:
-   - Admin logs in with hardcoded password ("kerventz2000")
-   - Session stored in database with expiration
-   - Admin can view, search, edit, and delete contacts
-   - Export functionality generates VCF/CSV files
-
-3. **Data Export**:
-   - VCF files include contact names with "BOOST.1🚀🔥🇭🇹" suffix
-   - CSV files provide structured data export
-   - Files generated on-demand for download
+## Contact Management Features
+- **Registration Flow**: Multi-step form with country code selection and email validation
+- **Duplicate Prevention**: Server-side validation to prevent duplicate phone numbers
+- **Data Enrichment**: Automatic suffix addition and phone number formatting
+- **Search Functionality**: Admin dashboard with contact search and filtering capabilities
+- **Bulk Operations**: Mass export and deletion capabilities for administrators
 
 ## External Dependencies
 
-### Core Dependencies
-- **Database**: `@neondatabase/serverless` for PostgreSQL connection
-- **ORM**: `drizzle-orm` and `drizzle-kit` for database operations
-- **UI**: `@radix-ui/*` components with `class-variance-authority`
-- **Forms**: `react-hook-form` with `@hookform/resolvers`
-- **Validation**: `zod` for schema validation
-- **HTTP Client**: `@tanstack/react-query` for API calls
-- **Email**: `nodemailer` for email delivery
-- **Routing**: `wouter` for client-side navigation
-
-### Development Tools
-- **Build**: `vite` with React plugin
-- **Styling**: `tailwindcss` with `autoprefixer`
-- **TypeScript**: Full TypeScript support across frontend and backend
-- **Replit Integration**: Special Vite plugins for Replit environment
-
-## Deployment Strategy
-
-### Development
-- Vite dev server serves frontend with HMR
-- Express server runs with `tsx` for TypeScript execution
-- Database migrations handled by Drizzle Kit
-- Environment variables required: `DATABASE_URL`, `EMAIL_USER`, `EMAIL_PASSWORD`
-
-### Production
-- Frontend built to `dist/public` directory
-- Backend bundled with `esbuild` to `dist/index.js`
-- Static file serving integrated into Express server
-- PostgreSQL database provisioned through Neon
-- Email service configured with Gmail SMTP
-
-### Environment Setup
-- Database URL must be provided for Neon PostgreSQL
-- Email credentials needed for confirmation emails
-- Admin password hardcoded as "kerventz2000"
-- Session duration set to 24 hours
-
-### Key Features
-- Mobile-responsive design with Tailwind breakpoints
-- Dark/light theme support with system preference detection
-- Real-time contact counting and recent contact display
-- Duplicate prevention for WhatsApp numbers
-- French language interface targeting Haitian market
-- WhatsApp group integration for community building
+- **Database**: PostgreSQL via Neon serverless with connection pooling
+- **UI Components**: Radix UI primitives with shadcn/ui styling system
+- **Validation**: Zod for schema validation across client and server
+- **Authentication**: bcrypt for password hashing and express-session for session management
+- **File Exports**: Custom VCF generation with proper UTF-8 encoding for contact files
+- **Development Tools**: Vite with React plugin, ESBuild for production builds
+- **WhatsApp Integration**: Direct links to WhatsApp group for contact sharing
+- **Email Services**: Contact form integration for support communications
+- **Font Services**: Google Fonts (Inter) for typography
+- **Image Hosting**: Unsplash for testimonial profile images
