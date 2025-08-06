@@ -1,116 +1,199 @@
-import { contacts, adminSessions, type Contact, type InsertContact, type AdminSession, type InsertAdminSession } from "@shared/schema";
+import { contacts, admins, sessions, type Contact, type InsertContact, type Admin, type InsertAdmin, type Session } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, ilike, or, sql } from "drizzle-orm";
+import { eq, desc, count, and, gte, lte, sql } from "drizzle-orm";
+import { randomUUID } from "crypto";
 
 export interface IStorage {
-  // Contact methods
+  // Contact operations
   getContact(id: string): Promise<Contact | undefined>;
-  getContactByWhatsApp(whatsappNumber: string): Promise<Contact | undefined>;
+  getContactByPhone(phone: string): Promise<Contact | undefined>;
   createContact(contact: InsertContact): Promise<Contact>;
   updateContact(id: string, contact: Partial<InsertContact>): Promise<Contact | undefined>;
   deleteContact(id: string): Promise<boolean>;
   getAllContacts(): Promise<Contact[]>;
-  getRecentContacts(limit: number): Promise<Contact[]>;
   searchContacts(query: string): Promise<Contact[]>;
+  getContactsWithEmail(): Promise<Contact[]>;
+  getContactsByDateRange(startDate: Date, endDate: Date): Promise<Contact[]>;
+  getTodayContacts(): Promise<Contact[]>;
+  getWeekContacts(): Promise<Contact[]>;
   getContactsCount(): Promise<number>;
-  deleteAllContacts(): Promise<number>;
+  deleteAllContacts(): Promise<boolean>;
+  getLatestContacts(limit?: number): Promise<Contact[]>;
   
-  // Admin session methods
-  createAdminSession(session: InsertAdminSession): Promise<AdminSession>;
-  getActiveAdminSession(): Promise<AdminSession | undefined>;
-  deactivateAdminSession(id: string): Promise<boolean>;
+  // Admin operations
+  getAdmin(id: string): Promise<Admin | undefined>;
+  getAdminByUsername(username: string): Promise<Admin | undefined>;
+  createAdmin(admin: InsertAdmin): Promise<Admin>;
+  updateAdminLastLogin(id: string): Promise<void>;
+  
+  // Session operations
+  createSession(adminId: string, expiresAt: Date): Promise<Session>;
+  getSession(sessionId: string): Promise<Session | undefined>;
+  deleteSession(sessionId: string): Promise<boolean>;
+  cleanExpiredSessions(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
+  // Contact operations
   async getContact(id: string): Promise<Contact | undefined> {
     const [contact] = await db.select().from(contacts).where(eq(contacts.id, id));
     return contact || undefined;
   }
 
-  async getContactByWhatsApp(whatsappNumber: string): Promise<Contact | undefined> {
-    const [contact] = await db.select().from(contacts).where(eq(contacts.whatsappNumber, whatsappNumber));
+  async getContactByPhone(phone: string): Promise<Contact | undefined> {
+    const [contact] = await db.select().from(contacts).where(eq(contacts.phone, phone));
     return contact || undefined;
   }
 
-  async createContact(insertContact: InsertContact): Promise<Contact> {
-    const [contact] = await db
+  async createContact(contact: InsertContact): Promise<Contact> {
+    // Add the K.B.S suffix if not already present
+    const nameWithSuffix = contact.name.endsWith("K.B.S🚀🔥") 
+      ? contact.name 
+      : `${contact.name} K.B.S🚀🔥`;
+    
+    const [newContact] = await db
       .insert(contacts)
-      .values(insertContact)
+      .values({
+        ...contact,
+        name: nameWithSuffix,
+      })
       .returning();
-    return contact;
+    return newContact;
   }
 
-  async updateContact(id: string, updateData: Partial<InsertContact>): Promise<Contact | undefined> {
-    const [contact] = await db
+  async updateContact(id: string, contact: Partial<InsertContact>): Promise<Contact | undefined> {
+    const [updatedContact] = await db
       .update(contacts)
-      .set(updateData)
+      .set({ 
+        ...contact, 
+        updatedAt: new Date(),
+      })
       .where(eq(contacts.id, id))
       .returning();
-    return contact || undefined;
+    return updatedContact || undefined;
   }
 
   async deleteContact(id: string): Promise<boolean> {
     const result = await db.delete(contacts).where(eq(contacts.id, id));
-    return (result.rowCount || 0) > 0;
+    return result.rowCount ? result.rowCount > 0 : false;
   }
 
   async getAllContacts(): Promise<Contact[]> {
     return await db.select().from(contacts).orderBy(desc(contacts.createdAt));
   }
 
-  async getRecentContacts(limit: number): Promise<Contact[]> {
-    return await db.select().from(contacts).orderBy(desc(contacts.createdAt)).limit(limit);
+  async searchContacts(query: string): Promise<Contact[]> {
+    return await db.select().from(contacts).where(
+      sql`${contacts.name} ILIKE ${'%' + query + '%'} OR ${contacts.phone} ILIKE ${'%' + query + '%'}`
+    ).orderBy(desc(contacts.createdAt));
   }
 
-  async searchContacts(query: string): Promise<Contact[]> {
-    return await db
-      .select()
-      .from(contacts)
-      .where(
-        or(
-          ilike(contacts.fullName, `%${query}%`),
-          ilike(contacts.whatsappNumber, `%${query}%`),
-          ilike(contacts.email, `%${query}%`)
-        )
-      )
+  async getContactsWithEmail(): Promise<Contact[]> {
+    return await db.select().from(contacts)
+      .where(and(
+        sql`${contacts.email} IS NOT NULL`,
+        sql`${contacts.email} != ''`
+      ))
       .orderBy(desc(contacts.createdAt));
   }
 
+  async getContactsByDateRange(startDate: Date, endDate: Date): Promise<Contact[]> {
+    return await db.select().from(contacts)
+      .where(and(
+        gte(contacts.createdAt, startDate),
+        lte(contacts.createdAt, endDate)
+      ))
+      .orderBy(desc(contacts.createdAt));
+  }
+
+  async getTodayContacts(): Promise<Contact[]> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    return await this.getContactsByDateRange(today, tomorrow);
+  }
+
+  async getWeekContacts(): Promise<Contact[]> {
+    const today = new Date();
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    
+    return await this.getContactsByDateRange(weekAgo, today);
+  }
+
   async getContactsCount(): Promise<number> {
-    const [result] = await db.select({ count: sql<number>`count(*)` }).from(contacts);
+    const [result] = await db.select({ count: count() }).from(contacts);
     return result.count;
   }
 
-  async deleteAllContacts(): Promise<number> {
+  async deleteAllContacts(): Promise<boolean> {
     const result = await db.delete(contacts);
-    return result.rowCount || 0;
+    return result.rowCount ? result.rowCount > 0 : false;
   }
 
-  async createAdminSession(insertSession: InsertAdminSession): Promise<AdminSession> {
-    // Deactivate any existing sessions first
-    await db.update(adminSessions).set({ isActive: false });
-    
+  // Admin operations
+  async getAdmin(id: string): Promise<Admin | undefined> {
+    const [admin] = await db.select().from(admins).where(eq(admins.id, id));
+    return admin || undefined;
+  }
+
+  async getAdminByUsername(username: string): Promise<Admin | undefined> {
+    const [admin] = await db.select().from(admins).where(eq(admins.username, username));
+    return admin || undefined;
+  }
+
+  async createAdmin(admin: InsertAdmin): Promise<Admin> {
+    const [newAdmin] = await db
+      .insert(admins)
+      .values(admin)
+      .returning();
+    return newAdmin;
+  }
+
+  async updateAdminLastLogin(id: string): Promise<void> {
+    await db
+      .update(admins)
+      .set({ lastLogin: new Date() })
+      .where(eq(admins.id, id));
+  }
+
+  // Session operations
+  async createSession(adminId: string, expiresAt: Date): Promise<Session> {
+    const sessionId = randomUUID();
     const [session] = await db
-      .insert(adminSessions)
-      .values(insertSession)
+      .insert(sessions)
+      .values({
+        id: sessionId,
+        adminId,
+        expiresAt,
+      })
       .returning();
     return session;
   }
 
-  async getActiveAdminSession(): Promise<AdminSession | undefined> {
-    const [session] = await db
-      .select()
-      .from(adminSessions)
-      .where(eq(adminSessions.isActive, true));
+  async getSession(sessionId: string): Promise<Session | undefined> {
+    const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId));
     return session || undefined;
   }
 
-  async deactivateAdminSession(id: string): Promise<boolean> {
-    const result = await db
-      .update(adminSessions)
-      .set({ isActive: false })
-      .where(eq(adminSessions.id, id));
-    return (result.rowCount || 0) > 0;
+  async deleteSession(sessionId: string): Promise<boolean> {
+    const result = await db.delete(sessions).where(eq(sessions.id, sessionId));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  async cleanExpiredSessions(): Promise<void> {
+    await db.delete(sessions).where(lte(sessions.expiresAt, new Date()));
+  }
+
+  async getLatestContacts(limit: number = 5): Promise<Contact[]> {
+    const latestContacts = await db
+      .select()
+      .from(contacts)
+      .orderBy(desc(contacts.createdAt))
+      .limit(limit);
+    return latestContacts;
   }
 }
 
