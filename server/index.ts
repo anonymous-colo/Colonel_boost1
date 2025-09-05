@@ -1,71 +1,93 @@
-import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+import express from "express";
+import session from "express-session";
+import bodyParser from "body-parser";
+import cors from "cors";
+import dotenv from "dotenv";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import * as schema from "./schema";
+import { writeFileSync } from "fs";
+
+dotenv.config();
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+const port = process.env.PORT || 3001;
 
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+// --- DB
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const db = drizzle(pool, { schema });
 
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
+// --- Middlewares
+app.use(cors());
+app.use(bodyParser.json());
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "defaultsecret",
+    resave: false,
+    saveUninitialized: true,
+    cookie: { maxAge: 24 * 60 * 60 * 1000 } // 24h
+  })
+);
 
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
+// --- API
 
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
+// Ajouter un contact
+app.post("/api/contacts", async (req, res) => {
+  try {
+    const { name, phone, email } = req.body;
 
-      log(logLine);
+    if (!name || !phone) {
+      return res.status(400).json({ error: "Nom et téléphone requis" });
     }
-  });
 
-  next();
+    // Vérifie doublon
+    const existing = await db.query.contacts.findFirst({
+      where: (contacts, { eq }) => eq(contacts.phone, phone)
+    });
+    if (existing) {
+      return res.status(400).json({ error: "Ce numéro est déjà enregistré." });
+    }
+
+    // Ajoute avec suffixe BOOST.1🚀🔥
+    await db.insert(schema.contacts).values({
+      name: `${name} BOOST.1🚀🔥`,
+      phone,
+      email: email || null
+    });
+
+    res.json({ success: true, message: "Contact ajouté avec succès" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
 });
 
-(async () => {
-  const server = await registerRoutes(app);
+// Export VCF
+app.get("/api/export-vcf", async (req, res) => {
+  try {
+    const allContacts = await db.query.contacts.findMany();
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    let vcfContent = "";
+    allContacts.forEach((c) => {
+      vcfContent += `BEGIN:VCARD\nVERSION:3.0\nFN;CHARSET=UTF-8:${c.name}\nTEL;CHARSET=UTF-8:${c.phone}\nEND:VCARD\n`;
+    });
 
-    res.status(status).json({ message });
-    throw err;
-  });
+    const filePath = "/tmp/contacts.vcf";
+    writeFileSync(filePath, vcfContent, "utf8");
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
+    res.download(filePath, "contacts.vcf");
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur export VCF" });
   }
+});
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
+// --- Lancer serveur
+if (process.env.NODE_ENV !== "production") {
+  app.listen(port, () => {
+    console.log(`✅ API en écoute sur http://localhost:${port}`);
   });
-})();
+}
+
+export default app;
